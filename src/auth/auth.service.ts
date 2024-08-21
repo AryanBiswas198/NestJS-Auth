@@ -15,25 +15,21 @@ import { LoginUserDto } from './dto/login-user.dto';
 export class AuthService {
   constructor(@InjectModel(User.name) private userModel: Model<User>) {}
 
-  // This is returning wrong output
   async findAll(): Promise<Partial<User>[]> {
-    return this.userModel.find({}, 'name email _id').exec();
+    return this.userModel.find({}, '_id firstName lastName email isVerified').exec();
   }
 
   async findOne(id: string): Promise<User>{
-    return this.userModel.findById(id).exec();
+    return this.userModel.findById(id).select("-password").exec();
   }
 
-
   async signup(user: SignupUserDto): Promise<User> {
-
     const existingUser = await this.userModel.findOne({email: user.email});
     if(existingUser){
       throw new Error('User Already Exists');
     }
 
     const hashedPassword = await bcrypt.hash(user.password, 10);
-
     const newUser = new this.userModel({
       ...user,
       password: hashedPassword,
@@ -42,7 +38,6 @@ export class AuthService {
     const savedUser = await newUser.save();
 
     // Send Verification Email
-
     const mailerService = new MailerService(this.userModel);
     await mailerService.sendEmail({email: user.email, emailType: 'VERIFY', userId: savedUser._id});
 
@@ -68,16 +63,13 @@ export class AuthService {
     user.verifyTokenExpiry = null;
 
     await user.save();
-
     return {
       success: true,
       message: 'Email Verified Successfully',
     };
   }
-
   
   async login(user: LoginUserDto): Promise<{token: String}> {
-
     const existingUser = await this.userModel.findOne({email: user.email});
     if(!existingUser){
       throw new UnauthorizedException('User does not Exists !!');
@@ -96,12 +88,33 @@ export class AuthService {
     return {token};
   }
 
+
   async updateUser(id: string, user: UpdateUserDto): Promise<User> {
-    return this.userModel.findByIdAndUpdate(id, {email: user.email}).exec();
+    const updatedUser =  this.userModel.findByIdAndUpdate(id, {
+      $set: {
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName
+      }
+    }, {new: true}).select("-password").exec();
+
+    if(!updatedUser){
+      throw new Error("User Not Found !!");
+    }
+
+    return updatedUser;
   }
 
 
   async deleteOne(id: string): Promise<any> {
-    return this.userModel.findByIdAndDelete(id).exec();
+    const user = this.userModel.findByIdAndDelete(id).exec();
+
+    if(!user){
+      throw new Error("User Not Found !!");
+    }
+    return {
+      success: true,
+      message: "User Deleted Successfully",
+    };
   }
 }
